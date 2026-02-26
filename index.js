@@ -67,3 +67,15 @@ router.get('/orders', async (call) => {
 app.use(router);
 
 // Health check
+app.get('/health', (req, res) => res.send('✅ שרת ימות המשיח של GROK עובד!'));
+
+// Handler לשגיאות כלליות (מונע HTML)
+app.use((err, req, res, next) => {
+    console.error('שגיאה Express:', err);
+    res.status(500).send('שגיאה פנימית');
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 שרת רץ על פורט ${PORT}`);
+});
