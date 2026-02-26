@@ -15,31 +15,33 @@ const router = YemotRouter({
 
 // ====================== הלוגיקה ======================
 router.get('/', async (call) => {
+    console.log('שיחה חדשה מ:', call.phone);
+
+    await call.id_list_message([
+        { type: 'text', data: 'שלום! ברוך הבא למערכת GROK' }
+    ], { prependToNextAction: true });
+
+    const choice = await call.read([
+        { type: 'text', data: 'לחץ 1 להזמנה' },
+        { type: 'text', data: 'לחץ 2 למידע' },
+        { type: 'text', data: 'לחץ 9 לניתוק' }
+    ], 'tap', { max_digits: 1 });
+
+    console.log('choice:', choice);
+
     try {
-        console.log('שיחה חדשה מ:', call.phone);
-
-        await call.id_list_message([
-            { type: 'text', data: 'שלום! ברוך הבא למערכת GROK' }
-        ], { prependToNextAction: true });
-
-        const choice = await call.read([
-            { type: 'text', data: 'לחץ 1 להזמנה' },
-            { type: 'text', data: 'לחץ 2 למידע' },
-            { type: 'text', data: 'לחץ 9 לניתוק' }
-        ], 'tap', { max_digits: 1 });
-
-        console.log('choice:', choice);
-
         if (choice === '1') {
             console.log('Entering choice 1');
             await call.id_list_message([{ type: 'text', data: 'מעביר להזמנות...' }], { prependToNextAction: true });
             call.go_to_folder('/orders');
         } else if (choice === '2') {
             console.log('Entering choice 2');
-            await call.id_list_message([{ type: 'text', data: 'המידע כאן...' }], { prependToNextAction: true });
+            await call.id_list_message([{ type: 'text', data: 'המידע כאן...' }]);  // ללא prepend - האחרונה לפני hangup
+            console.log('Sending hangup for choice 2');
             call.hangup();
         } else if (choice === '9') {
             console.log('Entering choice 9');
+            console.log('Sending hangup for choice 9');
             call.hangup();
         } else {
             console.log('Entering else');
@@ -48,24 +50,20 @@ router.get('/', async (call) => {
         }
     } catch (error) {
         if (error instanceof ExitError) {
-            console.log('ExitError normal');
+            console.log('ExitError normal - hangup sent');
         } else {
             console.error('שגיאה בלוגיקה:', error);
-            await call.id_list_message([{ type: 'text', data: 'אוי, שגיאה! נסה שוב מאוחר יותר.' }], { prependToNextAction: true });
+            await call.id_list_message([{ type: 'text', data: 'אוי, שגיאה! נסה שוב מאוחר יותר.' }]);
             call.hangup();
         }
     }
 });
 
 router.get('/orders', async (call) => {
-    try {
-        console.log('Entering orders');
-        await call.id_list_message([{ type: 'text', data: 'בחר מוצר: 1-מוצר A, 2-מוצר B' }], { prependToNextAction: true });
-        call.hangup();
-    } catch (error) {
-        console.error('שגיאה בהזמנות:', error);
-        call.hangup();
-    }
+    console.log('Entering orders');
+    await call.id_list_message([{ type: 'text', data: 'בחר מוצר: 1-מוצר A, 2-מוצר B' }]);  // ללא prepend - האחרונה
+    console.log('Sending hangup for orders');
+    call.hangup();
 });
 
 // ====================== הרצה ======================
