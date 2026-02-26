@@ -31,23 +31,27 @@ router.get('/', async (call) => {
         console.log('choice:', choice);
 
         if (choice === '1') {
-            await call.id_list_message([{ type: 'text', data: 'מעביר להזמנות...' }]);
+            console.log('Entering choice 1');
+            await call.id_list_message([{ type: 'text', data: 'מעביר להזמנות...' }], { prependToNextAction: true });
             call.go_to_folder('/orders');
         } else if (choice === '2') {
-            await call.id_list_message([{ type: 'text', data: 'המידע כאן...' }]);
+            console.log('Entering choice 2');
+            await call.id_list_message([{ type: 'text', data: 'המידע כאן...' }], { prependToNextAction: true });
             call.hangup();
         } else if (choice === '9') {
+            console.log('Entering choice 9');
             call.hangup();
         } else {
-            await call.id_list_message([{ type: 'text', data: 'לא הבנתי, נסה שוב' }]);
+            console.log('Entering else');
+            await call.id_list_message([{ type: 'text', data: 'לא הבנתי, נסה שוב' }], { prependToNextAction: true });
             call.go_to_folder('/');
         }
     } catch (error) {
         if (error instanceof ExitError) {
-            // נורמלי, להתעלם
+            console.log('ExitError normal');
         } else {
             console.error('שגיאה בלוגיקה:', error);
-            await call.id_list_message([{ type: 'text', data: 'אוי, שגיאה! נסה שוב מאוחר יותר.' }]);
+            await call.id_list_message([{ type: 'text', data: 'אוי, שגיאה! נסה שוב מאוחר יותר.' }], { prependToNextAction: true });
             call.hangup();
         }
     }
@@ -55,7 +59,8 @@ router.get('/', async (call) => {
 
 router.get('/orders', async (call) => {
     try {
-        await call.id_list_message([{ type: 'text', data: 'בחר מוצר: 1-מוצר A, 2-מוצר B' }]);
+        console.log('Entering orders');
+        await call.id_list_message([{ type: 'text', data: 'בחר מוצר: 1-מוצר A, 2-מוצר B' }], { prependToNextAction: true });
         call.hangup();
     } catch (error) {
         console.error('שגיאה בהזמנות:', error);
@@ -69,7 +74,7 @@ app.use(router);
 // Health check
 app.get('/health', (req, res) => res.send('✅ שרת ימות המשיח של GROK עובד!'));
 
-// Handler לשגיאות כלליות (מונע HTML)
+// Handler לשגיאות
 app.use((err, req, res, next) => {
     console.error('שגיאה Express:', err);
     res.status(500).send('שגיאה פנימית');
