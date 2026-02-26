@@ -13,9 +13,10 @@ router.get('/', async (call) => {
     try {
         console.log('שיחה חדשה מ:', call.phone);
 
+        // הוסף prependToNextAction: true כדי להמשיך אחרי ההודעה
         await call.id_list_message([
             { type: 'text', data: 'שלום! ברוך הבא למערכת GROK' }
-        ]);
+        ], { prependToNextAction: true });
 
         const choice = await call.read(
             [{ type: 'text', data: 'לחץ 1 להזמנה\nלחץ 2 למידע\nלחץ 9 לניתוק' }],
@@ -29,6 +30,8 @@ router.get('/', async (call) => {
         } 
         else if (choice === '2') {
             await call.id_list_message([{ type: 'text', data: 'המידע כאן...' }]);
+            // אם צריך להמשיך - הוסף prependToNextAction: true
+            call.hangup();  // או go_to_folder אם צריך חזרה
         } 
         else if (choice === '9') {
             call.hangup();
