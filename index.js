@@ -106,4 +106,7 @@ async function updateEntry(templateId, rowid, blocked, phone) {
 }
 
 // בריאות
-app.get('/health', (req, res
+app.get('/health', (req, res) => res.send('✅ שרת ימות המשיח של GROK עובד!'));
+
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`Server running on port ${port}`));
