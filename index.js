@@ -3,95 +3,76 @@ const https = require('https');
 const urlModule = require('url');
 
 const app = express();
-const router = express.Router();
-const yemotRouter = require('yemot-router2')(router);
-
-app.use(router);
 
 const token = 'WU1BUElL.apik_owJJz4IQ1z0pa_O-scE6rw.NTXls1kFwOLUwwYefyEXXFszW7y-qYl29gQVsVZU4d4';
 const templateId = '1387640';
 const baseUrl = 'https://www.call2all.co.il/ym/api/';
-const folderPath = '/3/';   // <--- שים לב: שיניתי ל-3/ כי זה מה שרואים בלוגים שלך
+const folderPath = '/3/';   // ← שים לב: 3/ כמו בשלוחה שלך
 
-router.get('/', async (call) => {
+app.get('/', async (req, res) => {
   try {
-    // זיהוי הקשה במהלך השמעת קובץ (הכי נפוץ בשלוחת השמעת קבצים)
-    let currentFile = '';
-    if (call.query.what) {
-      const match = call.query.what.match(/\/(\d+)\.wav$/);
-      if (match) currentFile = match[1];
-    }
+    const what = req.query.what || '';
+    const match = what.match(/\/(\d+)\.wav$/);
+    const currentFile = match ? match[1] : '';
 
     if (currentFile) {
-      console.log(`🔑 זוהתה הקשה במהלך קובץ: ${currentFile}`);
+      console.log(`🔑 זוהתה הקשה על קובץ ${currentFile}`);
 
       const txtUrl = `${baseUrl}DownloadFile?token=${token}&path=ivr2:${folderPath}${currentFile}.txt`;
       const txtContent = await getFile(txtUrl);
 
       const phone = extractPhone(txtContent);
-      if (!phone) {
-        return call.say_hebrew('לא נמצא מספר טלפון תקין').hangup();
-      }
+      if (!phone) return res.send('say_hebrew^לא נמצא מספר טלפון');
 
-      const members = await getMembers(templateId);
+      const members = await getMembers();
       const existing = members.entries.find(e => e.phone === phone);
 
-      let msg = '';
       if (!existing) {
-        await updateEntry(templateId, null, 0, phone);
-        msg = 'המספר נוסף בהצלחה לרשימת התפוצה';
+        await updateEntry(null, 0, phone);
+        return res.send('say_hebrew^המספר נוסף בהצלחה לרשימה^hangup');
       } else {
-        await updateEntry(templateId, existing.rowid, 1, phone);
-        msg = 'המספר חוסם בהצלחה';
+        await updateEntry(existing.rowid, 1, phone);
+        return res.send('say_hebrew^המספר חוסם בהצלחה^hangup');
       }
-
-      return call.say_hebrew(msg + '. תודה ולהתראות').hangup();
     }
 
-    // אם אין הקשה – תפריט רגיל
-    return call.id_list_message([
-      't-שלום! ברוך הבא למערכת GROK',
-      't-לחץ 1 להזמנה',
-      't-לחץ 2 למידע',
-      't-לחץ 9 לניתוק'
-    ]);
+    // תפריט רגיל
+    return res.send('id_list_message^t-שלום! ברוך הבא למערכת GROK^t-לחץ 7 במהלך ההשמעה לבדיקה');
 
-  } catch (error) {
-    console.error(error);
-    return call.say_hebrew('שגיאה במערכת').hangup();
+  } catch (e) {
+    console.error(e);
+    return res.send('say_hebrew^שגיאה במערכת^hangup');
   }
 });
 
 function getFile(url) {
   return new Promise((resolve, reject) => {
-    https.get(url, (res) => {
-      let data = '';
-      res.on('data', chunk => data += chunk);
-      res.on('end', () => resolve(data));
-      res.on('error', reject);
+    https.get(url, r => {
+      let d = '';
+      r.on('data', c => d += c);
+      r.on('end', () => resolve(d));
     }).on('error', reject);
   });
 }
 
-function extractPhone(text) {
-  const match = text.match(/Phone-(\d+)/);
-  return match ? match[1] : null;
+function extractPhone(t) {
+  const m = t.match(/Phone-(\d+)/);
+  return m ? m[1] : null;
 }
 
-async function getMembers(templateId) {
-  const url = `${baseUrl}GetTemplateEntries?token=${token}&templateId=${templateId}`;
-  const data = await getFile(url);
-  return JSON.parse(data);
+async function getMembers() {
+  const d = await getFile(`${baseUrl}GetTemplateEntries?token=${token}&templateId=${templateId}`);
+  return JSON.parse(d);
 }
 
-async function updateEntry(templateId, rowid, blocked, phone) {
-  const params = new urlModule.URLSearchParams({ token, templateId, blocked: blocked.toString() });
-  if (rowid) params.append('rowid', rowid);
-  if (phone) params.append('phone', phone);
-  await getFile(`${baseUrl}UpdateTemplateEntry?${params.toString()}`);
+async function updateEntry(rowid, blocked, phone) {
+  const p = new urlModule.URLSearchParams({ token, templateId, blocked: blocked.toString() });
+  if (rowid) p.append('rowid', rowid);
+  if (phone) p.append('phone', phone);
+  await getFile(`${baseUrl}UpdateTemplateEntry?${p}`);
 }
 
-app.get('/health', (req, res) => res.send('✅ שרת GROK עובד!'));
+app.get('/health', (req, res) => res.send('✅ GROK עובד!'));
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`✅ Server running on port ${port}`));
+app.listen(port, () => console.log('✅ Server ready'));
