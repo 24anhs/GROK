@@ -1,78 +1,96 @@
 const express = require('express');
 const https = require('https');
-const urlModule = require('url');
+const url = require('url');
 
 const app = express();
 
-const token = 'WU1BUElL.apik_owJJz4IQ1z0pa_O-scE6rw.NTXls1kFwOLUwwYefyEXXFszW7y-qYl29gQVsVZU4d4';
-const templateId = '1387640';
-const baseUrl = 'https://www.call2all.co.il/ym/api/';
-const folderPath = '/3/';   // ← שים לב: 3/ כמו בשלוחה שלך
+const TOKEN = 'WU1BUElL.apik_owJJz4IQ1z0pa_O-scE6rw.NTXls1kFwOLUwwYefyEXXFszW7y-qYl29gQVsVZU4d4';
+const TEMPLATE_ID = '1387640';
+const BASE_URL = 'https://www.call2all.co.il/ym/api/';
+const FOLDER = '/3/';  // שנה אם התיקייה שונה
 
-app.get('/', async (req, res) => {
-  try {
-    const what = req.query.what || '';
-    const match = what.match(/\/(\d+)\.wav$/);
-    const currentFile = match ? match[1] : '';
-
-    if (currentFile) {
-      console.log(`🔑 זוהתה הקשה על קובץ ${currentFile}`);
-
-      const txtUrl = `${baseUrl}DownloadFile?token=${token}&path=ivr2:${folderPath}${currentFile}.txt`;
-      const txtContent = await getFile(txtUrl);
-
-      const phone = extractPhone(txtContent);
-      if (!phone) return res.send('say_hebrew^לא נמצא מספר טלפון');
-
-      const members = await getMembers();
-      const existing = members.entries.find(e => e.phone === phone);
-
-      if (!existing) {
-        await updateEntry(null, 0, phone);
-        return res.send('say_hebrew^המספר נוסף בהצלחה לרשימה^hangup');
-      } else {
-        await updateEntry(existing.rowid, 1, phone);
-        return res.send('say_hebrew^המספר חוסם בהצלחה^hangup');
-      }
-    }
-
-    // תפריט רגיל
-    return res.send('id_list_message^t-שלום! ברוך הבא למערכת GROK^t-לחץ 7 במהלך ההשמעה לבדיקה');
-
-  } catch (e) {
-    console.error(e);
-    return res.send('say_hebrew^שגיאה במערכת^hangup');
-  }
-});
-
-function getFile(url) {
+function fetchUrl(fullUrl) {
   return new Promise((resolve, reject) => {
-    https.get(url, r => {
-      let d = '';
-      r.on('data', c => d += c);
-      r.on('end', () => resolve(d));
+    https.get(fullUrl, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => resolve(data));
     }).on('error', reject);
   });
 }
 
-function extractPhone(t) {
-  const m = t.match(/Phone-(\d+)/);
-  return m ? m[1] : null;
-}
+app.get('/', async (req, res) => {
+  try {
+    const what = req.query.what || '';
+    const fileMatch = what.match(/\/(\d+)\.wav$/i);
+    const fileName = fileMatch ? fileMatch[1] : '';
 
-async function getMembers() {
-  const d = await getFile(`${baseUrl}GetTemplateEntries?token=${token}&templateId=${templateId}`);
-  return JSON.parse(d);
-}
+    if (fileName) {
+      console.log(`Detected tap on file: ${fileName}`);
 
-async function updateEntry(rowid, blocked, phone) {
-  const p = new urlModule.URLSearchParams({ token, templateId, blocked: blocked.toString() });
-  if (rowid) p.append('rowid', rowid);
-  if (phone) p.append('phone', phone);
-  await getFile(`${baseUrl}UpdateTemplateEntry?${p}`);
-}
+      const txtPath = `ivr2:${FOLDER}${fileName}.txt`;
+      const txtUrl = `${BASE_URL}DownloadFile?token=${TOKEN}&path=${encodeURIComponent(txtPath)}`;
+      const txt = await fetchUrl(txtUrl);
 
-app.get('/health', (req, res) => res.send('✅ GROK עובד!'));
+      const phoneMatch = txt.match(/Phone-(\d+)/);
+      const phone = phoneMatch ? phoneMatch[1] : null;
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => console.log('✅ Server ready'));
+      if (!phone) {
+        return res.send('say_hebrew^לא נמצא מספר תקין בקובץ^hangup^yes');
+      }
+
+      // בדוק חברים
+      const membersUrl = `${BASE_URL}GetTemplateEntries?token=${TOKEN}&templateId=${TEMPLATE_ID}`;
+      const membersJson = await fetchUrl(membersUrl);
+      let members;
+      try {
+        members = JSON.parse(membersJson);
+      } catch (e) {
+        return res.send('say_hebrew^שגיאה בקריאת הרשימה^hangup^yes');
+      }
+
+      const entry = members.entries ? members.entries.find(e => e.phone === phone) : null;
+
+      let message = '';
+      if (!entry) {
+        // הוסף חדש - blocked=0
+        const addParams = new url.URLSearchParams({
+          token: TOKEN,
+          templateId: TEMPLATE_ID,
+          phone: phone,
+          blocked: '0'
+        });
+        await fetchUrl(`${BASE_URL}UpdateTemplateEntry?${addParams.toString()}`);
+        message = 'המספר נוסף בהצלחה לרשימה';
+      } else {
+        // חסום - blocked=1
+        const blockParams = new url.URLSearchParams({
+          token: TOKEN,
+          templateId: TEMPLATE_ID,
+          rowid: entry.rowid,
+          blocked: '1'
+        });
+        await fetchUrl(`${BASE_URL}UpdateTemplateEntry?${blockParams.toString()}`);
+        message = 'המספר חוסם בהצלחה';
+      }
+
+      return res.send(`say_hebrew^${message}. תודה ולהתראות^hangup^yes`);
+    }
+
+    // ברירת מחדל - תפריט פשוט
+    return res.send('id_list_message^t-שלום! ברוך הבא^t-במהלך ההשמעה לחץ כל מקש לבדיקה וחסימה');
+
+  } catch (err) {
+    console.error(err);
+    return res.send('say_hebrew^שגיאה טכנית במערכת^hangup^yes');
+  }
+});
+
+app.get('/health', (req, res) => {
+  res.send('✅ GROK עובד - ' + new Date().toISOString());
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server listening on port ${PORT}`);
+});
