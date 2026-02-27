@@ -1,84 +1,104 @@
-import express from 'express';
-import { YemotRouter, ExitError } from 'yemot-router2';
+const express = require('express');
+const https = require('https');
+const urlModule = require('url'); // לעבודה עם URLSearchParams
 
 const app = express();
-const router = YemotRouter({
-  printLog: true,
-  timeout: 60000,
-  removeInvalidChars: true,
-  uncaughtErrorHandler: (error, call) => {
-    console.error('שגיאה לא מטופלת:', error);
-    call.id_list_message([{ type: 'text', data: 'שגיאה במערכת, נסה שוב.' }]);
-    call.hangup();
+const router = express.Router();
+const yemotRouter = require('yemot-router2')(router);
+
+app.use(router);
+
+const token = 'WU1BUElL.apik_owJJz4IQ1z0pa_O-scE6rw.NTXls1kFwOLUwwYefyEXXFszW7y-qYl29gQVsVZU4d4';
+const templateId = '1387640';
+const baseUrl = 'https://www.call2all.co.il/ym/api/';
+const folderPath = '/1/'; // הנחה: שנה לתיקייה האמיתית של הקבצים, ללא סיומת
+
+router.get('/', async (call) => {
+  try {
+    if (call.hangup_reason === 'tap_during_message') {
+      const dtmf = call.values.tap; // המקש שהוקש (אפשר לסנן מקש ספציפי אם צריך)
+      const currentFile = call.values.message_id; // שם הקובץ הנוכחי (למשל '000')
+
+      // הורד קובץ TXT מקביל
+      const txtPath = folderPath + currentFile + '.txt';
+      const txtUrl = baseUrl + 'DownloadFile?token=' + token + '&path=ivr2:' + txtPath;
+      const txtContent = await getFile(txtUrl);
+
+      // חלץ מספר טלפון
+      const phone = extractPhone(txtContent);
+      if (!phone) {
+        return call.hangup(); // אם אין מספר, נתק
+      }
+
+      // בדוק חברים ברשימה
+      const members = await getMembers(templateId);
+      const existing = members.entries.find(e => e.phone === phone);
+
+      if (!existing) {
+        // הוסף חדש (רגיל, blocked=0)
+        await updateEntry(templateId, null, 0, phone);
+      } else {
+        // חסום (blocked=1)
+        await updateEntry(templateId, existing.rowid, 1, phone);
+      }
+
+      // המשך או נתק (כאן: נתק אחרי פעולה)
+      return call.hangup();
+    } else {
+      // לוגיקה רגילה: השמע רשימת קבצים (שנה לרשימה האמיתית)
+      return call.id_list_message([
+        'f-000', // קובץ 000
+        'f-001', // וכו'
+        'f-002'
+      ]);
+    }
+  } catch (error) {
+    console.error(error);
+    return call.hangup();
   }
 });
 
-// ====================== הלוגיקה ======================
-router.get('/', async (call) => {
-    console.log('שיחה חדשה מ:', call.phone);
+// פונקציה להורדת קובץ כטקסט
+function getFile(url) {
+  return new Promise((resolve, reject) => {
+    https.get(url, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => resolve(data));
+      res.on('error', reject);
+    }).on('error', reject);
+  });
+}
 
-    await call.id_list_message([
-        { type: 'text', data: 'שלום! ברוך הבא למערכת GROK' }
-    ], { prependToNextAction: true });
+// חלץ מספר טלפון מהטקסט
+function extractPhone(text) {
+  const match = text.match(/Phone-(\d+)/);
+  return match ? match[1] : null;
+}
 
-    const choice = await call.read([
-        { type: 'text', data: 'לחץ 1 להזמנה' },
-        { type: 'text', data: 'לחץ 2 למידע' },
-        { type: 'text', data: 'לחץ 9 לניתוק' }
-    ], 'tap', { max_digits: 1 });
+// קבל רשימת חברים
+async function getMembers(templateId) {
+  const url = baseUrl + 'GetTemplateEntries?token=' + token + '&templateId=' + templateId;
+  const data = await getFile(url);
+  return JSON.parse(data);
+}
 
-    console.log('choice:', choice);
+// עדכן/הוסף חבר (אם rowid null - הוסף חדש)
+async function updateEntry(templateId, rowid, blocked, phone) {
+  const params = new urlModule.URLSearchParams({
+    token,
+    templateId,
+    blocked: blocked.toString()
+  });
+  if (rowid) params.append('rowid', rowid.toString());
+  if (phone) params.append('phone', phone);
 
-    try {
-        if (choice === '1') {
-            console.log('Entering choice 1');
-            await call.id_list_message([{ type: 'text', data: 'מעביר להזמנות...' }], { prependToNextAction: true });
-            call.go_to_folder('/orders');
-        } else if (choice === '2') {
-            console.log('Entering choice 2');
-            await call.id_list_message([{ type: 'text', data: 'המידע כאן...' }]);  // ללא prepend - האחרונה לפני hangup
-            console.log('Sending hangup for choice 2');
-            call.hangup();
-        } else if (choice === '9') {
-            console.log('Entering choice 9');
-            console.log('Sending hangup for choice 9');
-            call.hangup();
-        } else {
-            console.log('Entering else');
-            await call.id_list_message([{ type: 'text', data: 'לא הבנתי, נסה שוב' }], { prependToNextAction: true });
-            call.go_to_folder('/');
-        }
-    } catch (error) {
-        if (error instanceof ExitError) {
-            console.log('ExitError normal - hangup sent');
-        } else {
-            console.error('שגיאה בלוגיקה:', error);
-            await call.id_list_message([{ type: 'text', data: 'אוי, שגיאה! נסה שוב מאוחר יותר.' }]);
-            call.hangup();
-        }
-    }
-});
+  const url = baseUrl + 'UpdateTemplateEntry?' + params.toString();
+  await getFile(url); // התגובה היא JSON, אבל אנחנו לא צריכים אותה אם OK
+}
 
-router.get('/orders', async (call) => {
-    console.log('Entering orders');
-    await call.id_list_message([{ type: 'text', data: 'בחר מוצר: 1-מוצר A, 2-מוצר B' }]);  // ללא prepend - האחרונה
-    console.log('Sending hangup for orders');
-    call.hangup();
-});
+// בריאות
+app.get('/health', (req, res) => res.send('✅'));
 
-// ====================== הרצה ======================
-app.use(router);
-
-// Health check
-app.get('/health', (req, res) => res.send('✅ שרת ימות המשיח של GROK עובד!'));
-
-// Handler לשגיאות
-app.use((err, req, res, next) => {
-    console.error('שגיאה Express:', err);
-    res.status(500).send('שגיאה פנימית');
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 שרת רץ על פורט ${PORT}`);
-});
+const port = process.env.PORT || 3000;
+app.listen(port, () => console.log(`Server running on port ${port}`));
