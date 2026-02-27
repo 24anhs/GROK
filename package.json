@@ -1,12 +1,12 @@
 {
   "name": "yemot-grok",
-  "version": "6.2.0",
+  "version": "1.0.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.18.2",
-    "yemot-router2": "^1.1.0"
+    "yemot-router2": "^6.2.0"
   }
 }
