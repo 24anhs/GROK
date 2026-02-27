@@ -1,6 +1,6 @@
 {
   "name": "yemot-grok",
-  "version": "1.0.0",
+  "version": "6.2.0",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
