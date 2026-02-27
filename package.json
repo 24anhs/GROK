@@ -1,5 +1,5 @@
 {
-  "name": "grok-yemot",
+  "name": "yemot-grok"
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
