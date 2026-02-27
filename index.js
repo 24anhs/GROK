@@ -11,56 +11,44 @@ app.use(router);
 const token = 'WU1BUElL.apik_owJJz4IQ1z0pa_O-scE6rw.NTXls1kFwOLUwwYefyEXXFszW7y-qYl29gQVsVZU4d4';
 const templateId = '1387640';
 const baseUrl = 'https://www.call2all.co.il/ym/api/';
-const folderPath = '/3/'; // שנה אם התיקייה שלך אחרת (למשל /1/ או /5/)
+const folderPath = '/3/';   // <--- שים לב: שיניתי ל-3/ כי זה מה שרואים בלוגים שלך
 
 router.get('/', async (call) => {
   try {
-    // === זיהוי הקשה במהלך השמעת קובץ (PressKey + what) ===
-    let isTapDuringPlayback = false;
+    // זיהוי הקשה במהלך השמעת קובץ (הכי נפוץ בשלוחת השמעת קבצים)
     let currentFile = '';
-    let pressedKey = '';
-
-    if (call.query.PressKey || call.values.PressKey || call.query.what) {
-      isTapDuringPlayback = true;
-      pressedKey = call.query.PressKey || call.values.PressKey || call.values.tap || '7';
-
-      // חילוץ שם הקובץ מה-what (ivr2:/3/000.wav)
-      if (call.query.what) {
-        const match = call.query.what.match(/\/(\d+)\.wav$/);
-        if (match) currentFile = match[1];
-      }
+    if (call.query.what) {
+      const match = call.query.what.match(/\/(\d+)\.wav$/);
+      if (match) currentFile = match[1];
     }
 
-    if (isTapDuringPlayback && currentFile) {
-      console.log(`🔑 הקשה ${pressedKey} במהלך קובץ: ${currentFile}`);
+    if (currentFile) {
+      console.log(`🔑 זוהתה הקשה במהלך קובץ: ${currentFile}`);
 
-      // הורדת TXT
-      const txtUrl = baseUrl + 'DownloadFile?token=' + token + '&path=ivr2:' + folderPath + currentFile + '.txt';
+      const txtUrl = `${baseUrl}DownloadFile?token=${token}&path=ivr2:${folderPath}${currentFile}.txt`;
       const txtContent = await getFile(txtUrl);
 
       const phone = extractPhone(txtContent);
       if (!phone) {
-        return call.say_hebrew('לא נמצא מספר טלפון תקין בקובץ הטקסט').hangup();
+        return call.say_hebrew('לא נמצא מספר טלפון תקין').hangup();
       }
 
-      // בדיקה והוספה/חסימה
       const members = await getMembers(templateId);
       const existing = members.entries.find(e => e.phone === phone);
 
-      let actionMsg = '';
+      let msg = '';
       if (!existing) {
         await updateEntry(templateId, null, 0, phone);
-        actionMsg = 'המספר נוסף בהצלחה לרשימת התפוצה';
+        msg = 'המספר נוסף בהצלחה לרשימת התפוצה';
       } else {
         await updateEntry(templateId, existing.rowid, 1, phone);
-        actionMsg = 'המספר חוסם בהצלחה';
+        msg = 'המספר חוסם בהצלחה';
       }
 
-      // הודעה קולית + ניתוק
-      return call.say_hebrew(actionMsg + '. תודה ולהתראות').hangup();
-    } 
+      return call.say_hebrew(msg + '. תודה ולהתראות').hangup();
+    }
 
-    // === אם אין הקשה – משמיע תפריט רגיל (לשלוחה 5) ===
+    // אם אין הקשה – תפריט רגיל
     return call.id_list_message([
       't-שלום! ברוך הבא למערכת GROK',
       't-לחץ 1 להזמנה',
@@ -69,12 +57,11 @@ router.get('/', async (call) => {
     ]);
 
   } catch (error) {
-    console.error('שגיאה:', error);
+    console.error(error);
     return call.say_hebrew('שגיאה במערכת').hangup();
   }
 });
 
-// === פונקציות עזר (אותו דבר כמו קודם) ===
 function getFile(url) {
   return new Promise((resolve, reject) => {
     https.get(url, (res) => {
@@ -101,12 +88,10 @@ async function updateEntry(templateId, rowid, blocked, phone) {
   const params = new urlModule.URLSearchParams({ token, templateId, blocked: blocked.toString() });
   if (rowid) params.append('rowid', rowid);
   if (phone) params.append('phone', phone);
-
   await getFile(`${baseUrl}UpdateTemplateEntry?${params.toString()}`);
 }
 
-// בריאות
-app.get('/health', (req, res) => res.send('✅ שרת ימות המשיח של GROK עובד!'));
+app.get('/health', (req, res) => res.send('✅ שרת GROK עובד!'));
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`Server running on port ${port}`));
+app.listen(port, () => console.log(`✅ Server running on port ${port}`));
